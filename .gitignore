@@ -1,4 +1,3 @@
 *.txt
 .DS_Store
-project1/
-*.xlsx
+project1/*.xlsx
