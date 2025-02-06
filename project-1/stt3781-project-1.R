@@ -12,11 +12,7 @@ library(glmnet)
 set.seed(123)
 
 data <- read.table("/Users/rango/documents/stt3781/project1/data.txt", header = TRUE, sep = "\t")
-data
 data$CARDIA <- factor(data$CARDIA)
-counts <- table(data$CARDIA)
-
-print(counts)
 
 barplot(counts, main = "Class Frequency", xlab = "Class", ylab = "Frequency", col = "lightgreen")
 
@@ -65,7 +61,6 @@ rf_conf_mat <- conf_mat(rf_results, truth = CARDIA, estimate = .pred_class)
 print(rf_conf_mat)
 
 rf_accuracy <- accuracy(rf_results, truth = CARDIA, estimate = .pred_class)
-print(rf_accuracy)
 
 gb_model <- boost_tree(
   trees = 1000,
@@ -109,89 +104,10 @@ gb_predictions <- predict(gb_fit, new_data = test_data)
 gb_results <- bind_cols(test_data, gb_predictions)
 
 gb_conf_mat <- conf_mat(gb_results, truth = CARDIA, estimate = .pred_class)
-print(gb_conf_mat)
 
 gb_accuracy <- accuracy(gb_results, truth = CARDIA, estimate = .pred_class)
-print(gb_accuracy)
 
-train_data$SEXE <- factor(train_data$SEXE)
-train_data$PHYS <- factor(train_data$PHYS)
-train_data$HIS_C <- factor(train_data$HIS_C)
-train_data$HISFAM_C <- factor(train_data$HISFAM_C)
-train_data$FUMEUR <- factor(train_data$FUMEUR)
-train_data$DIAB <- factor(train_data$DIAB)
-train_data$AGE <- train_data$AGE^2
-
-test_data$SEXE <- factor(test_data$SEXE)
-test_data$PHYS <- factor(test_data$PHYS)
-test_data$HIS_C <- factor(test_data$HIS_C)
-test_data$HISFAM_C <- factor(test_data$HISFAM_C)
-test_data$FUMEUR <- factor(test_data$FUMEUR)
-test_data$DIAB <- factor(test_data$DIAB)
-test_data$AGE <- test_data$AGE^2
-
-full_logistic_model <- glm(formula = CARDIA ~ AGE + SEXE + PSYST + PHYS + NB_HT + HIS_C + HISFAM_C + FUMEUR + DIAB + IMC + SES, family = "binomial", data = train_data)
-
-X <- as.matrix(train_data[, -which(names(train_data) == "CARDIA")])
-y <- train_data$CARDIA
-
-cv_lasso_logistic_model <- cv.glmnet(X, y, family = "binomial", alpha = 1)
-plot(cv_lasso_logistic_model)
-best_lambda <- cv_lasso_logistic_model$lambda.min
-coef(cv_lasso_logistic_model, s = "lambda.min")
-
-backward_logistic_model <- stats::step(full_logistic_model, direction = "backward")
-forward_logistic_model <- stats::step(full_logistic_model, direction = "forward")
-both_logistic_model <- stats::step(full_logistic_model, direction = "both")
-
-summary(backward_logistic_model)
-summary(forward_logistic_model)
-summary(both_logistic_model)
-
-proportions_nb_ht <- train_data %>%
-  group_by(NB_HT) %>%
-  summarise(proportion = mean(CARDIA == 1))
-
-ggplot(proportions_nb_ht, aes(x = NB_HT, y = proportion, color = NB_HT)) +
-  geom_point(size = 3, show.legend = FALSE) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  labs(
-    title = "Proportion of Cardiac Cases by NB_HT Modality",
-    x = "NB_HT Modality",
-    y = "Proportion of Cardiac Cases"
-  ) +
-  theme_minimal()
-
-proportions_imc <- train_data %>%
-  group_by(IMC) %>%
-  summarise(proportion = mean(CARDIA == 1))
-
-ggplot(proportions_imc, aes(x = IMC, y = proportion, color = IMC)) +
-  geom_point(size = 3, show.legend = FALSE) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  labs(
-    title = "Proportion of Cardiac Cases by IMC Modality",
-    x = "IMC Modality",
-    y = "Proportion of Cardiac Cases"
-  ) +
-  theme_minimal()
-
-proportions_ses <- train_data %>%
-  group_by(SES) %>%
-  summarise(proportion = mean(CARDIA == 1))
-
-ggplot(proportions_ses, aes(x = SES, y = proportion, color = SES)) +
-  geom_point(size = 3, show.legend = FALSE) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  labs(
-    title = "Proportion of Cardiac Cases by SES Modality",
-    x = "SES Modality",
-    y = "Proportion of Cardiac Cases"
-  ) +
-  theme_minimal()
-
-#form <- CARDIA ~ AGE+ factor(SEXE) + PSYST + factor(PHYS) + NB_HT + factor(HIS_C) + factor(HISFAM_C) + factor(FUMEUR) + factor(DIAB) + IMC + SES
-form <- CARDIA ~ AGE + SEXE + HISFAM_C + PSYST + FUMEUR + IMC + PHYS + SES
+form <- CARDIA ~ I(AGE^2) + factor(PHYS) + SES + I(PSYST^2)+  factor(FUMEUR) +factor(SEXE)
 orig_model <- glm(formula = form, family = "binomial", data = train_data)
 
 orig_prob <- predict(orig_model, type = "response")
@@ -288,8 +204,6 @@ glm_model <- train(
   metric = "ROC"
 )
 
-print(glm_model)
-
 auc_results <- glm_model$resample$ROC
 f1_results <- glm_model$resample$F1
 
@@ -297,8 +211,6 @@ cat("Mean AUC:", mean(auc_results, na.rm = TRUE), "\n")
 cat("Standard Deviation of AUC:", sd(auc_results, na.rm = TRUE), "\n")
 cat("Mean F1-score:", mean(f1_results, na.rm = TRUE), "\n")
 cat("Standard Deviation of F1-score:", sd(f1_results, na.rm = TRUE), "\n")
-
-test_data$CARDIA <- factor(test_data$CARDIA, levels = c(0, 1), labels = c("No", "Yes"))
 
 test_probs <- predict(glm_model, newdata = test_data, type = "prob")$Yes
 test_preds <- ifelse(test_probs > 0.5, "Yes", "No")
@@ -314,4 +226,3 @@ cat("AUC (Test Set):", round(test_auc, 3), "\n")
 cat("F1-score (Test Set):", round(test_f1, 3), "\n")
 
 cat("\n==== Classification Table (Confusion Matrix) ====\n")
-print(test_conf_matrix$table)
