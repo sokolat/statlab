@@ -1,3 +1,6 @@
 *.txt
 .DS_Store
 project1/*.xlsx
+.RData
+.RData
+.RHistory
