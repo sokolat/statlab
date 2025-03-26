@@ -3,6 +3,8 @@ library(zoo)      # Provides functions for time series objects
 library(mice)     # Implements multiple imputation for missing data
 library(tidyr)    # Provides functions for tidying data (e.g., reshape)
 library(purrr)    # Implements functional programming tools (e.g., map)
+library(dplyr)
+library(sandwich)
 
 # Set seed for reproducibility of results
 set.seed(123)
@@ -19,20 +21,60 @@ addh.comp$fumeur <- factor(addh.comp$fumeur)
 # Reshape the complete dataset into wide format based on 'ID2' and 'vague_temps'
 addh.comp.wide <- reshape(addh.comp, idvar="ID2", timevar="vague_temps", direction="wide")
 
+addh.comp.wide$sexe <- addh.comp.wide$sexe.1
+addh.comp.wide <- select(addh.comp.wide, -c(sexe.1, sexe.2, sexe.3, sexe.4))
+addh.comp.wide$age <- addh.comp.wide$age.1
+addh.comp.wide <- select(addh.comp.wide, -c(age.1, age.2, age.3, age.4))
+addh.comp.wide$SSE <- addh.comp.wide$SSE.1
+addh.comp.wide <- select(addh.comp.wide, -c(SSE.1, SSE.2, SSE.3, SSE.4))
+
+meth <- make.method(addh.comp.wide)
+#meth['age'] <- 'norm'
+# Create the predictor matrix for the dataset 'addh.comp.wide'
+# The make.predictorMatrix function generates a matrix of 1s and 0s 
+# indicating which variables are used as predictors for each other
+pred.mat <- make.predictorMatrix(addh.comp.wide)
+
+# Set the entire column corresponding to 'ID2' in the predictor matrix to 0
+# This will exclude 'ID2' from being used as a predictor variable in the imputation process
+pred.mat[, 'ID2'] <- 0
+
 # Set parameters for multiple imputation
-num.iter <- 5      # Number of imputation iterations
-max.iter <- 5      # Maximum iterations for each imputation
+num.iter <- 10     # Number of imputation iterations
+max.iter <- 5     # Maximum iterations for each imputation
 seed = 123         # Set seed for random number generation
 
 # Perform multiple imputation using the mice package
-multi.imp <- mice(data=addh.comp.wide, m=num.iter, maxit=max.iter, seed=seed)
+multi.imp <- mice(data=addh.comp.wide, m=num.iter, maxit=max.iter, seed=seed, predictorMatrix = pred.mat, method=meth)
+
+# Generate the density plot with improved formatting
+densityplot(multi.imp, 
+            layout = c(4, 4), 
+            main = "Density Plot of Imputed Values",
+            lwd = 2)
 
 # Function to reshape each imputed dataset into long format for further analysis
+
+#to.long <- function(i) {
+#  # Complete the i-th imputation and reshape it into long format
+#  df <- complete(multi.imp, i)  # Extract i-th imputation dataset
+#  imp.data.long <- reshape(df, direction="long", idvar="ID2", timevar="vague_temps")
+#}
+
 to.long <- function(i) {
-  # Complete the i-th imputation and reshape it into long format
-  df <- complete(multi.imp, i)  # Extract i-th imputation dataset
+  df <- complete(multi.imp, i)
+  df <- df %>%
+    mutate(
+      sexe.1 = sexe, sexe.2 = sexe, sexe.3 = sexe, sexe.4 = sexe,
+      age.1 = age, age.2 = age, age.3 = age, age.4 = age,
+      SSE.1 = SSE, SSE.2 = SSE, SSE.3 = SSE, SSE.4 = SSE
+    ) %>%
+    select(-sexe, -age, -SSE) 
   imp.data.long <- reshape(df, direction="long", idvar="ID2", timevar="vague_temps")
+  return(imp.data.long)
 }
+
+multi.imp.data.long <- map(1:num.iter, to.long)
 
 # Apply the function to all imputed datasets and store results
 multi.imp.data.long <- map(1:num.iter, to.long)
@@ -83,3 +125,28 @@ cat("Estimated effect of 'psychotherapie.11': ", betas.est.mean, "\n")
 cat("Intra-imputation variance: ", var.intra, "\n")
 cat("Inter-imputation variance: ", var.inter, "\n")
 cat("Total variance: ", var.tot, "\n")
+
+addh.incomp$psychotherapie <- factor(addh.incomp$psychotherapie)
+addh.incomp$sexe <- factor(addh.incomp$sexe)
+addh.incomp$fumeur <- factor(addh.incomp$fumeur)
+
+locf.data <- na.locf(addh.incomp)
+form <- alcool_nb_verres ~ vague_temps + psychotherapie + sentiment_deprime + age + sexe + SSE + fumeur + poids 
+model <- lm(form, data=locf.data)
+
+# Residuals vs Fitted values plot
+plot(fitted(model), resid(model), 
+     main = "Residuals vs Fitted Values",
+     xlab = "Fitted Values (Adjusted Values)",
+     ylab = "Residuals",
+     pch = 16, col = "blue")  # Customize points
+
+# Add a horizontal reference line
+abline(h = 0, col = "red", lwd = 2, lty = 2)
+
+beta.est <- coef(model)['psychotherapie1']
+var.est <- vcovHC(model)['psychotherapie1', 'psychotherapie1']
+
+cat("Beta Estimate:", beta.est,"\n")
+cat("Variance Estimate:", var.est, "\n")
+
